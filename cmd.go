@@ -70,7 +70,7 @@ func (c *Cmd) SetSplitFlag(flag string) {
 }
 
 func (c *Cmd) Parse(cmdLine string) (isHelp bool, help string, err error) {
-
+	// clean
 	c.params = nil
 	for _, v := range c.flags.Items() {
 		switch v.(type) {
@@ -79,14 +79,76 @@ func (c *Cmd) Parse(cmdLine string) (isHelp bool, help string, err error) {
 			v.(pType).updateIsSet(false)
 		}
 	}
+
+	// judge legal
 	c.command = cmdLine
 	args := strings.Split(cmdLine, c.splitFlag)
 	if len(args) < 0 {
 		return false, "", errors.New("invalid command line")
-	} else if args[0] != c.name {
-		return false, "", errors.New("invalid command name")
 	}
-	c.formatParams(args)
+	// parse help
+	if len(args) >= 2 &&
+		judgeHelp(args[1]) {
+		return true, c.Help(), nil
+	}
+	// parse command
+	var pLast *params
+	for i, arg := range args {
+		if i == 0 && arg == c.name {
+			pNew := new(params)
+			pNew.value = arg
+			pNew.types = paramsMain
+			c.params = pNew
+			pNew.previous = nil
+
+			pLast = pNew
+			continue
+		}
+		if (len(arg) > 0 && arg[0] == '-') ||
+			(len(arg) > 1 && arg[:2] == "--") &&
+				pLast.types != paramsKey {
+
+			pNew := new(params)
+			pNew.value = arg[1:]
+			// hashTable not exist
+
+			if c.hashTable[pNew.value] == "" {
+				continue
+			}
+			pNew.types = paramsKey
+			pNew.previous = pLast
+			pLast.next = pNew
+			pLast = pNew
+			continue
+		}
+
+		if len(arg) > 0 && pLast.types == paramsKey {
+			if judgeHelp(arg) {
+				if p, ok := c.flags.Get(c.hashTable[pLast.value]); ok {
+					return true, p.(pType).getHelp(), nil
+				}
+			}
+			pNew := new(params)
+			pNew.value = arg
+			ht := c.hashTable[pLast.value]
+			if res, ok := c.flags.Get(ht); ok {
+				switch res.(type) {
+				case pType:
+					err := res.(pType).stringToValue(pNew.value)
+					if err != nil {
+						continue
+					}
+					res.(pType).updateIsSet(true)
+				}
+			}
+			pNew.types = paramsValue
+			pNew.previous = pLast
+			pLast.next = pNew
+			pLast = pNew
+			continue
+		}
+	}
+
 	c.isParse = true
 	return false, "", nil
 }
@@ -147,61 +209,17 @@ func (c *Cmd) Clean() *Cmd {
 	return c
 }
 
-func (c *Cmd) formatParams(args []string) {
-	var pLast *params
-	for i, arg := range args {
-		if i == 0 && arg == c.name {
-			pNew := new(params)
-			pNew.value = arg
-			pNew.types = paramsMain
-			c.params = pNew
-			pNew.previous = nil
-
-			pLast = pNew
-			continue
-		}
-		if len(arg) > 0 && arg[0] == '-' && pLast.types != paramsKey {
-			pNew := new(params)
-			pNew.value = arg[1:]
-			// hashTable not exist
-			if c.hashTable[pNew.value] == "" {
-				continue
-			}
-			pNew.types = paramsKey
-			pNew.previous = pLast
-			pLast.next = pNew
-			pLast = pNew
-			continue
-		}
-
-		if len(arg) > 0 && pLast.types == paramsKey {
-			pNew := new(params)
-			pNew.value = arg
-			ht := c.hashTable[pLast.value]
-			if res, ok := c.flags.Get(ht); ok {
-				switch res.(type) {
-				case pType:
-					err := res.(pType).stringToValue(pNew.value)
-					if err != nil {
-						continue
-					}
-					res.(pType).updateIsSet(true)
-				}
-			}
-			pNew.types = paramsValue
-			pNew.previous = pLast
-			pLast.next = pNew
-			pLast = pNew
-			continue
-		}
+func (c *Cmd) Help() string {
+	msg := c.help + "\n"
+	for _, i := range c.flags.Items() {
+		msg += "\t" + i.(pType).getHelp() + "\n"
 	}
+	return msg
 }
 
-func (c *Cmd) parseHelp(cmdLine string) (isHelp bool, help string) {
-	if !strings.Contains(cmdLine, "-h") ||
-		strings.Contains(cmdLine, "help") {
-		return false, ""
+func judgeHelp(h string) bool {
+	if h == "-h" || h == "--help" || h == "/help" {
+		return true
 	}
-	// TODO: parse help
-	return false, ""
+	return false
 }

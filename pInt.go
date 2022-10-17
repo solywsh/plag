@@ -55,7 +55,7 @@ func (i *pInt) getLong() string {
 }
 
 func (i *pInt) getHelp() string {
-	return i.help
+	return "-" + i.short + "\t" + "--" + i.long + "\t" + i.help + "\n"
 }
 
 func (i *pInt) getValue() interface{} {
